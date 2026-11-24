@@ -17,11 +17,7 @@ function winner(board) {
   ];
 
   for (const [a, b, c] of lines) {
-    if (
-      board[a] &&
-      board[a] === board[b] &&
-      board[b] === board[c]
-    ) {
+    if (board[a] && board[a] === board[b] && board[b] === board[c]) {
       return board[a];
     }
   }
@@ -36,22 +32,21 @@ function minimax(board, turn, depth = 0) {
   if (result === HUMAN) return depth - 10;
   if (result === "draw") return 0;
 
-  const scores = [];
+  let best = turn === AI ? -Infinity : Infinity;
 
   for (let i = 0; i < 9; i++) {
     if (board[i]) continue;
 
-    const next = [...board];
-    next[i] = turn;
+    board[i] = turn;
+    const score = minimax(board, turn === AI ? HUMAN : AI, depth + 1);
+    board[i] = EMPTY;
 
-    scores.push(
-      minimax(next, turn === AI ? HUMAN : AI, depth + 1)
-    );
+    best = turn === AI
+      ? Math.max(best, score)
+      : Math.min(best, score);
   }
 
-  return turn === AI
-    ? Math.max(...scores)
-    : Math.min(...scores);
+  return best;
 }
 
 function bestAIMove(board) {
@@ -61,10 +56,9 @@ function bestAIMove(board) {
   for (let i = 0; i < 9; i++) {
     if (board[i]) continue;
 
-    const next = [...board];
-    next[i] = AI;
-
-    const score = minimax(next, HUMAN, 1);
+    board[i] = AI;
+    const score = minimax(board, HUMAN, 1);
+    board[i] = EMPTY;
 
     if (score > bestScore) {
       bestScore = score;
@@ -83,7 +77,6 @@ function register(mode, board) {
   const id = makeId(mode, board);
 
   if (states.has(id)) return id;
-
   states.add(id);
 
   const result = winner(board);
@@ -93,84 +86,126 @@ function register(mode, board) {
     for (let i = 0; i < 9; i++) {
       if (board[i]) continue;
 
-      const afterHuman = [...board];
-      afterHuman[i] = HUMAN;
+      const next = [...board];
+      next[i] = HUMAN;
 
-      let nextId;
-
-      if (winner(afterHuman)) {
-        nextId = register(mode, afterHuman);
-      } else {
-        const aiIndex = bestAIMove(afterHuman);
-        const afterAI = [...afterHuman];
-        afterAI[aiIndex] = AI;
-
-        nextId = register(mode, afterAI);
+      if (!winner(next)) {
+        const aiIndex = bestAIMove(next);
+        next[aiIndex] = AI;
       }
 
       links.push({
         index: i,
-        href: "#" + nextId
+        href: "#" + register(mode, next)
       });
     }
   }
 
-  screens.push({
-    id,
-    mode,
-    board: [...board],
-    result,
-    links
-  });
+  screens.push({ id, board: [...board], result, links });
 
   return id;
+}
+
+// Reusable SVG definitions.
+function renderDefs() {
+  return `
+    <defs>
+      <!-- Text styles -->
+      <text id="title" text-anchor="middle"
+            font-family="sans-serif" font-size="28"
+            font-weight="bold" fill="black">
+        Tic-Tac-Toe
+      </text>
+
+      <text id="menu-title" text-anchor="middle"
+            font-family="sans-serif" font-size="38"
+            font-weight="bold" fill="black">
+        Tic-Tac-Toe
+      </text>
+
+      <text id="subtitle" text-anchor="middle"
+            font-family="sans-serif" font-size="19"
+            fill="black">
+        Choose who goes first
+      </text>
+
+      <text id="turn" text-anchor="middle"
+            font-family="sans-serif" font-size="17"
+            fill="black"/>
+
+      <text id="human-label" text-anchor="middle"
+            font-family="sans-serif" font-size="23"
+            fill="black">
+        You go first (X)
+      </text>
+
+      <text id="ai-label" text-anchor="middle"
+            font-family="sans-serif" font-size="23"
+            fill="black">
+        AI goes first (O)
+      </text>
+
+      <text id="reset-label" text-anchor="middle"
+            font-family="sans-serif" font-size="20"
+            fill="black">
+        Reset
+      </text>
+
+      <!-- Reusable marks -->
+      <g id="mark-x" fill="none"
+         stroke="#1769aa" stroke-width="9"
+         stroke-linecap="round">
+        <path d="M -25 -25 L 25 25 M 25 -25 L -25 25"/>
+      </g>
+
+      <circle id="mark-o" cx="0" cy="0" r="29"
+              fill="none" stroke="#c62828"
+              stroke-width="9"/>
+
+      <!-- Reusable button -->
+      <rect id="button" width="320" height="75"
+            rx="10" fill="#eeeeee"
+            stroke="black" stroke-width="2"/>
+
+      <rect id="reset-button" width="160" height="55"
+            rx="8" fill="#eeeeee"
+            stroke="black" stroke-width="2"/>
+
+      <!-- Reusable board grid -->
+      <g id="grid" stroke="black"
+         stroke-width="4" fill="none">
+        <path d="M 100 0 V 300 M 200 0 V 300
+                 M 0 100 H 300 M 0 200 H 300"/>
+      </g>
+
+      <!-- Reusable clickable cell -->
+      <rect id="cell-hit" width="100" height="100"
+            fill="transparent"/>
+    </defs>
+  `;
+}
+
+// Reusable SVG text reference.
+function use(id, x, y, extra = "") {
+  return `<use href="#${id}" x="${x}" y="${y}" ${extra}/>`;
 }
 
 function renderMenu(humanStart, aiStart) {
   return `
     <g id="ttt_menu">
-      <rect x="0" y="0" width="${SIZE}" height="${HEIGHT}"
-            fill="white"/>
+      <rect width="${SIZE}" height="${HEIGHT}" fill="white"/>
 
-      <text x="255" y="100"
-            text-anchor="middle"
-            font-family="sans-serif"
-            font-size="38"
-            font-weight="bold"
-            fill="black">Tic-Tac-Toe</text>
-
-      <text x="255" y="155"
-            text-anchor="middle"
-            font-family="sans-serif"
-            font-size="19"
-            fill="black">Choose who goes first</text>
+      ${use("menu-title", 255, 100)}
+      ${use("subtitle", 255, 155)}
 
       <a href="#${humanStart}">
-        <rect x="95" y="195"
-              width="320" height="75"
-              rx="10"
-              fill="#eeeeee"
-              stroke="black"
-              stroke-width="2"/>
-        <text x="255" y="241"
-              text-anchor="middle"
-              font-family="sans-serif"
-              font-size="23"
-              fill="black">You go first (X)</text>
+        ${use("button", 95, 195)}
+        ${use("human-label", 255, 241)}
       </a>
 
       <a href="#${aiStart}">
-        <rect x="95" y="295"
-              width="320" height="75"
-              rx="10"
-              fill="#eeeeee"
-              stroke="black"
-              stroke-width="2"/>
-        <text x="255" y="341"
-              text-anchor="middle"
-              font-family="sans-serif"
-              font-size="23"
-              fill="black">AI goes first (O)</text>
+        ${use("button", 95, 295)}
+        ${use("ai-label", 255, 341)}
       </a>
     </g>
   `;
@@ -182,68 +217,42 @@ function renderBoard(screen) {
   const x0 = 105;
   const y0 = 145;
   const cell = 100;
-  const boardSize = cell * 3;
 
   let out = `
-    <g>
-      <text x="255" y="75"
-            text-anchor="middle"
-            font-family="sans-serif"
-            font-size="28"
-            font-weight="bold"
-            fill="black">Tic-Tac-Toe</text>
+    ${use("title", 255, 75)}
 
-      <text x="255" y="112"
-            text-anchor="middle"
-            font-family="sans-serif"
-            font-size="17"
-            fill="black">
-        ${
-          result === "draw"
-            ? "Draw!"
-            : result
-              ? result + " wins!"
-              : "Your turn"
-        }
-      </text>
+    <text x="255" y="112"
+          text-anchor="middle"
+          font-family="sans-serif"
+          font-size="17"
+          fill="black">
+      ${result === "draw"
+        ? "Draw!"
+        : result
+          ? result + " wins!"
+          : "Your turn"}
+    </text>
 
-      <g stroke="black" stroke-width="4" fill="none">
-        <path d="M ${x0 + cell} ${y0} V ${y0 + boardSize}"/>
-        <path d="M ${x0 + cell * 2} ${y0} V ${y0 + boardSize}"/>
-        <path d="M ${x0} ${y0 + cell} H ${x0 + boardSize}"/>
-        <path d="M ${x0} ${y0 + cell * 2} H ${x0 + boardSize}"/>
-      </g>
+    ${use("grid", x0, y0)}
   `;
 
   for (let i = 0; i < 9; i++) {
-    const row = Math.floor(i / 3);
-    const col = i % 3;
-
-    const cx = x0 + col * cell + cell / 2;
-    const cy = y0 + row * cell + cell / 2;
+    const x = x0 + (i % 3) * cell;
+    const y = y0 + Math.floor(i / 3) * cell;
 
     if (board[i]) {
-      out += `
-        <text x="${cx}" y="${cy + 17}"
-              text-anchor="middle"
-              font-family="sans-serif"
-              font-size="58"
-              font-weight="bold"
-              fill="${board[i] === HUMAN ? "#1769aa" : "#c62828"}">
-          ${board[i]}
-        </text>
-      `;
+      out += use(
+        board[i] === HUMAN ? "mark-x" : "mark-o",
+        x + 50,
+        y + 50
+      );
     } else if (!result) {
-      const move = links.find(link => link.index === i);
+      const move = links[i < 0 ? -1 : links.findIndex(l => l.index === i)];
 
       if (move) {
         out += `
           <a href="${move.href}">
-            <rect x="${x0 + col * cell}"
-                  y="${y0 + row * cell}"
-                  width="${cell}"
-                  height="${cell}"
-                  fill="transparent"/>
+            ${use("cell-hit", x, y)}
           </a>
         `;
       }
@@ -251,20 +260,10 @@ function renderBoard(screen) {
   }
 
   out += `
-      <a href="#ttt_menu">
-        <rect x="175" y="510"
-              width="160" height="55"
-              rx="8"
-              fill="#eeeeee"
-              stroke="black"
-              stroke-width="2"/>
-        <text x="255" y="545"
-              text-anchor="middle"
-              font-family="sans-serif"
-              font-size="20"
-              fill="black">Reset</text>
-      </a>
-    </g>
+    <a href="#ttt_menu">
+      ${use("reset-button", 175, 510)}
+      ${use("reset-label", 255, 545)}
+    </a>
   `;
 
   return out;
@@ -273,65 +272,44 @@ function renderBoard(screen) {
 function renderScreen(screen) {
   return `
     <g id="${screen.id}" class="board">
-
-      <rect x="0" y="0"
-            width="${SIZE}"
-            height="${HEIGHT}"
-            fill="white"
-            pointer-events="all"/>
-
+      <rect width="${SIZE}" height="${HEIGHT}"
+            fill="white" pointer-events="all"/>
       ${renderBoard(screen)}
-
     </g>
   `;
 }
 
-// Human-first starting state.
-const humanStart = register(
-  "human",
-  Array(9).fill(EMPTY)
-);
+// Starting states.
+const humanStart = register("human", Array(9).fill(EMPTY));
 
-// AI-first starting state.
 const aiBoard = Array(9).fill(EMPTY);
 aiBoard[bestAIMove(aiBoard)] = AI;
 
 const aiStart = register("ai", aiBoard);
 
-// Generate the standalone SVG.
+// Generate SVG.
 const svgSource = `
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="${SIZE}"
-     height="${HEIGHT}"
+     width="${SIZE}" height="${HEIGHT}"
      viewBox="0 0 ${SIZE} ${HEIGHT}">
 
-  <rect x="0" y="0"
-        width="${SIZE}"
-        height="${HEIGHT}"
-        fill="white"/>
+  ${renderDefs()}
+
+  <rect width="${SIZE}" height="${HEIGHT}" fill="white"/>
 
   <style>
-    .board {
-      display: none;
-    }
-
-    .board:target {
-      display: inline;
-    }
-
-    a {
-      cursor: pointer;
-    }
+    .board { display: none; }
+    .board:target { display: inline; }
+    a { cursor: pointer; }
   </style>
 
   ${renderMenu(humanStart, aiStart)}
-
-  ${screens.map(renderScreen).join("\n")}
+  ${screens.map(renderScreen).join("")}
 
 </svg>
 `.trim();
 
-// Parse and display the SVG in the HTML body.
+// Display SVG.
 const parsed = new DOMParser().parseFromString(
   svgSource,
   "image/svg+xml"
