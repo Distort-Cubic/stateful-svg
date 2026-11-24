@@ -89,27 +89,22 @@ function register(mode, board) {
   const result = winner(board);
   const links = [];
 
-  // Only generate clickable moves if the game is not over.
   if (!result) {
     for (let i = 0; i < 9; i++) {
       if (board[i]) continue;
 
-      // Simulate the human's move.
       const afterHuman = [...board];
       afterHuman[i] = HUMAN;
 
       let nextId;
 
       if (winner(afterHuman)) {
-        // Human move ends the game.
         nextId = register(mode, afterHuman);
       } else {
-        // AI makes its optimal response.
         const aiIndex = bestAIMove(afterHuman);
         const afterAI = [...afterHuman];
         afterAI[aiIndex] = AI;
 
-        // Register the resulting board, including terminal boards.
         nextId = register(mode, afterAI);
       }
 
@@ -150,7 +145,7 @@ function renderMenu(humanStart, aiStart) {
             font-size="19"
             fill="black">Choose who goes first</text>
 
-      <a href="#${humanStart}" xlink:href="#${humanStart}">
+      <a href="#${humanStart}">
         <rect x="95" y="195"
               width="320" height="75"
               rx="10"
@@ -164,7 +159,7 @@ function renderMenu(humanStart, aiStart) {
               fill="black">You go first (X)</text>
       </a>
 
-      <a href="#${aiStart}" xlink:href="#${aiStart}">
+      <a href="#${aiStart}">
         <rect x="95" y="295"
               width="320" height="75"
               rx="10"
@@ -243,7 +238,7 @@ function renderBoard(screen) {
 
       if (move) {
         out += `
-          <a href="${move.href}" xlink:href="${move.href}">
+          <a href="${move.href}">
             <rect x="${x0 + col * cell}"
                   y="${y0 + row * cell}"
                   width="${cell}"
@@ -256,7 +251,7 @@ function renderBoard(screen) {
   }
 
   out += `
-      <a href="#ttt_menu" xlink:href="#ttt_menu">
+      <a href="#ttt_menu">
         <rect x="175" y="510"
               width="160" height="55"
               rx="8"
@@ -279,36 +274,33 @@ function renderScreen(screen) {
   return `
     <g id="${screen.id}" class="board">
 
-      <!-- Opaque background covering the entire menu -->
       <rect x="0" y="0"
             width="${SIZE}"
             height="${HEIGHT}"
             fill="white"
             pointer-events="all"/>
 
-      <!-- Game board drawn above the white background -->
       ${renderBoard(screen)}
 
     </g>
   `;
 }
 
-// Generate the human-first starting state.
+// Human-first starting state.
 const humanStart = register(
   "human",
   Array(9).fill(EMPTY)
 );
 
-// Generate the AI-first starting state.
+// AI-first starting state.
 const aiBoard = Array(9).fill(EMPTY);
 aiBoard[bestAIMove(aiBoard)] = AI;
 
 const aiStart = register("ai", aiBoard);
 
-// Assemble the complete standalone SVG.
+// Generate the standalone SVG.
 const svgSource = `
 <svg xmlns="http://www.w3.org/2000/svg"
-     xmlns:xlink="http://www.w3.org/1999/xlink"
      width="${SIZE}"
      height="${HEIGHT}"
      viewBox="0 0 ${SIZE} ${HEIGHT}">
@@ -338,4 +330,13 @@ const svgSource = `
 
 </svg>
 `.trim();
-document.body.innerHTML = svgSource;
+
+// Parse and display the SVG in the HTML body.
+const parsed = new DOMParser().parseFromString(
+  svgSource,
+  "image/svg+xml"
+);
+
+document.body.replaceChildren(
+  document.importNode(parsed.documentElement, true)
+);
