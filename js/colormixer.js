@@ -1,443 +1,179 @@
 
 (() => {
-  "use strict";
+  const bits = n => n.toString(2).padStart(3, "0");
+  const levels = ["00", "20", "40", "60", "80", "A0", "C0", "E0"];
+  const states = Array.from({ length: 512 }, (_, i) =>
+    i.toString(2).padStart(9, "0")
+  );
 
-  // ==========================================
-  // 9-BIT RGB COLOR SPACE
-  // Exactly 4 SVGs
-  // Hash format: #RRRGGGBBB
-  // Channel intensity: binary * 32
-  // ==========================================
+  function rgb(state) {
+    return [0, 3, 6].map(i =>
+      (parseInt(state.slice(i, i + 3), 2) * 32)
+        .toString(16).padStart(2, "0")
+    ).join("").toUpperCase();
+  }
 
-  const NS = "http://www.w3.org/2000/svg";
-  const CHANNELS = ["red", "green", "blue"];
+  function outputGroup(state) {
+    const color = rgb(state);
+    const [r, g, b] = [0, 2, 4].map(i =>
+      parseInt(color.slice(i, i + 2), 16)
+    );
 
-  const state = {
-    red: 0,
-    green: 0,
-    blue: 0
-  };
+    const textColor =
+      (r * 299 + g * 587 + b * 114) / 1000 > 145
+        ? "#111" : "#fff";
 
-  const CHANNEL_COLORS = {
-    red: "#ff4444",
-    green: "#44dd66",
-    blue: "#4488ff"
-  };
+    return `
+      <g id="${state}" class="out${state === "000000000" ? " default" : ""}">
+        <rect x="0" y="0" width="360" height="160"
+              rx="12" fill="#${color}"/>
+        <text x="180" y="78" text-anchor="middle"
+              font-family="Arial,sans-serif" font-size="30"
+              font-weight="bold" fill="${textColor}">#${color}</text>
+        <text x="180" y="112" text-anchor="middle"
+              font-family="monospace" font-size="13"
+              fill="${textColor}">${state}</text>
+      </g>`;
+  }
 
-  // ==========================================
-  // DOCUMENT SETUP
-  // ==========================================
+  function inputGroup(state, channel, color) {
+    const start = channel * 3;
+    const selected = parseInt(state.slice(start, start + 3), 2);
+    const prefix = ["r", "g", "b"][channel];
 
-  document.documentElement.innerHTML = `
-    <head>
-      <meta charset="UTF-8">
-      <title>9-bit RGB Color Space</title>
-      <style>
-        * {
-          box-sizing: border-box;
-        }
+    let buttons = "";
 
-        body {
-          margin: 0;
-          padding: 30px;
-          background: #181818;
-          color: white;
-          font-family: system-ui, sans-serif;
-        }
+    for (let v = 0; v < 8; v++) {
+      const next =
+        state.slice(0, start) +
+        bits(v) +
+        state.slice(start + 3);
 
-        #rgb-inputs {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 24px;
-        }
+      const x = 6 + v * 44;
+      const active = v === selected;
 
-        .rgb-channel {
-          width: 180px;
-        }
+      buttons += `
+        <a href="#${next}"
+           aria-label="Set ${prefix.toUpperCase()} to ${levels[v]}">
+          <rect x="${x}" y="34" width="36" height="36" rx="6"
+                fill="${active ? color : "#fff"}"
+                stroke="${color}" stroke-width="2"/>
+          <text x="${x + 18}" y="57" text-anchor="middle"
+                font-family="Arial,sans-serif" font-size="11"
+                font-weight="bold"
+                fill="${active ? "#fff" : color}">${levels[v]}</text>
+        </a>`;
+    }
 
-        .rgb-channel svg {
-          display: block;
-          width: 100%;
-          height: auto;
-        }
+    return `
+      <g class="${prefix}-state ${prefix}-${state}${state === "000000000" ? " " + prefix + "-default" : ""}">
+        ${buttons}
+      </g>`;
+  }
 
-        #rgb-output svg {
-          display: block;
-          width: 300px;
-          max-width: 100%;
-          height: auto;
-          margin-top: 15px;
-        }
+  function inputSvg(id, channel, color, y) {
+    const prefix = ["r", "g", "b"][channel];
 
-        .rgb-switch {
-          cursor: pointer;
-          fill: transparent;
-          stroke: #888;
-          stroke-width: 2;
-        }
+    return `
+      <text x="8" y="${y - 10}"
+            font-family="Arial,sans-serif"
+            font-size="14" font-weight="bold" fill="${color}">
+        ${prefix.toUpperCase()} CHANNEL
+      </text>
+      <svg id="${id}" x="0" y="${y}" width="360" height="140"
+           viewBox="0 0 360 140">
+        <rect width="360" height="140" rx="10" fill="#fff"/>
+        ${states.map(s => inputGroup(s, channel, color)).join("")}
+      </svg>`;
+  }
 
-        .rgb-switch:hover {
-          stroke: white;
-          stroke-width: 5;
-        }
+  let css = `
+    #output {
+      display:block;
+      width:100%;
+      max-width:760px;
+      height:auto;
+    }
 
-        .rgb-state {
-          display: none;
-        }
+    #output .out { display:none; }
+    #output .out:target { display:inline; }
+    #output .out.default { display:inline; }
+    #output > .out:target ~ .out.default { display:none; }
 
-        .rgb-state.active {
-          display: inline;
-        }
+    #red .r-state,
+    #green .g-state,
+    #blue .b-state {
+      display:none;
+    }
 
-        #rgb-readout {
-          margin-top: 16px;
-          font-family: monospace;
-          font-size: 18px;
-        }
-      </style>
-    </head>
+    #red .r-default,
+    #green .g-default,
+    #blue .b-default {
+      display:inline;
+    }
 
-    <body>
-      <h2>9-bit RGB Color Space</h2>
-      <div id="rgb-inputs"></div>
-
-      <h3>Combined color</h3>
-      <div id="rgb-output"></div>
-
-      <div id="rgb-readout"></div>
-    </body>
+    #output a { cursor:pointer; }
+    text { user-select:none; }
   `;
 
-  // ==========================================
-  // ENCODING
-  // ==========================================
+  for (const state of states) {
+    if (state === "000000000") continue;
 
-  function bits(n) {
-    return n.toString(2).padStart(3, "0");
-  }
-
-  function encode() {
-    return (
-      bits(state.red) +
-      bits(state.green) +
-      bits(state.blue)
-    );
-  }
-
-  function decode(hash) {
-    if (!/^[01]{9}$/.test(hash)) return false;
-
-    state.red = parseInt(hash.slice(0, 3), 2);
-    state.green = parseInt(hash.slice(3, 6), 2);
-    state.blue = parseInt(hash.slice(6, 9), 2);
-
-    return true;
-  }
-
-  // ==========================================
-  // COLOR CONVERSION
-  // ==========================================
-
-  function channelHex(value) {
-    return (value * 32)
-      .toString(16)
-      .padStart(2, "0");
-  }
-
-  function rgbHex(r, g, b) {
-    return "#" +
-      channelHex(r) +
-      channelHex(g) +
-      channelHex(b);
-  }
-
-  function currentColor() {
-    return rgbHex(
-      state.red,
-      state.green,
-      state.blue
-    );
-  }
-
-  // ==========================================
-  // SVG HELPER
-  // ==========================================
-
-  function createSVG(tag, attributes = {}) {
-    const el = document.createElementNS(NS, tag);
-
-    for (const [key, value] of Object.entries(attributes)) {
-      el.setAttribute(key, value);
-    }
-
-    return el;
-  }
-
-  // ==========================================
-  // INPUT SVG GENERATION
-  // ==========================================
-
-  function generateInput(channel) {
-    const root = createSVG("svg", {
-      viewBox: "0 0 300 100",
-      role: "img",
-      "aria-label": channel + " channel"
-    });
-
-    root.appendChild(createSVG("title"));
-
-    root.querySelector("title").textContent =
-      channel.toUpperCase();
-
-    // CSS state definitions for all 512 URL combinations.
-    const css = createSVG("style");
-
-    let rules = "";
-
-    for (let i = 0; i < 512; i++) {
-      const shift = {
-        red: 6,
-        green: 3,
-        blue: 0
-      }[channel];
-
-      const value = (i >> shift) & 7;
-
-      rules += `
-        #${channel}-state-${i} {
-          display: ${value === 0 ? "inline" : "none"};
-        }
-      `;
-    }
-
-    css.textContent = rules;
-    root.appendChild(css);
-
-    // Eight visual states.
-    for (let value = 0; value < 8; value++) {
-      const group = createSVG("g", {
-        id: `${channel}-visual-${value}`,
-        class: "rgb-state"
-      });
-
-      for (let bit = 0; bit < 3; bit++) {
-        const active = Boolean(
-          value & (1 << (2 - bit))
-        );
-
-        group.appendChild(createSVG("rect", {
-          x: bit * 100,
-          y: 0,
-          width: 100,
-          height: 100,
-          fill: active ? CHANNEL_COLORS[channel] : "#333",
-          stroke: "#888",
-          "stroke-width": 2
-        }));
+    css += `
+      #output > [id="${state}"]:target ~ #red .r-${state},
+      #output > [id="${state}"]:target ~ #green .g-${state},
+      #output > [id="${state}"]:target ~ #blue .b-${state} {
+        display:inline;
       }
 
-      root.appendChild(group);
-    }
-
-    // Three actual SVG hyperlinks.
-    for (let bit = 0; bit < 3; bit++) {
-      const link = createSVG("a", {
-        href: "#" + encode(),
-        "data-channel": channel,
-        "data-bit": bit
-      });
-
-      link.appendChild(createSVG("rect", {
-        x: bit * 100,
-        y: 0,
-        width: 100,
-        height: 100,
-        class: "rgb-switch"
-      }));
-
-      root.appendChild(link);
-    }
-
-    return root;
+      #output > [id="${state}"]:target ~ #red .r-default,
+      #output > [id="${state}"]:target ~ #green .g-default,
+      #output > [id="${state}"]:target ~ #blue .b-default {
+        display:none;
+      }
+    `;
   }
 
-  // ==========================================
-  // OUTPUT SVG GENERATION
-  // ==========================================
+  const svg = `
+    <svg id="output"
+         xmlns="http://www.w3.org/2000/svg"
+         viewBox="0 0 360 700"
+         role="img">
 
-  function generateOutput() {
-    const root = createSVG("svg", {
-      viewBox: "0 0 300 200",
-      role: "img",
-      "aria-label": "Combined RGB color"
-    });
+      <style>${css}</style>
 
-    const css = createSVG("style");
+      <rect width="360" height="700" fill="#f4f4f4"/>
 
-    let rules = "";
+      ${states.filter(s => s !== "000000000").map(outputGroup).join("")}
+      ${outputGroup("000000000")}
 
-    for (let i = 0; i < 512; i++) {
-      rules += `
-        #rgb-color-${i} {
-          display: none;
-        }
+      ${inputSvg("red", 0, "#D00000", 210)}
+      ${inputSvg("green", 1, "#008000", 380)}
+      ${inputSvg("blue", 2, "#164CCB", 550)}
+    </svg>`;
 
-        #rgb-color-${i}.active {
-          display: inline;
-        }
-      `;
-    }
+  const parsed = new DOMParser().parseFromString(
+    svg,
+    "image/svg+xml"
+  );
 
-    css.textContent = rules;
-    root.appendChild(css);
-
-    // Generate all 512 colors.
-    for (let i = 0; i < 512; i++) {
-      const r = (i >> 6) & 7;
-      const g = (i >> 3) & 7;
-      const b = i & 7;
-
-      const group = createSVG("g", {
-        id: `rgb-color-${i}`,
-        class: "rgb-state"
-      });
-
-      group.appendChild(createSVG("rect", {
-        x: 0,
-        y: 0,
-        width: 300,
-        height: 200,
-        fill: rgbHex(r, g, b)
-      }));
-
-      root.appendChild(group);
-    }
-
-    return root;
+  if (parsed.querySelector("parsererror")) {
+    throw new Error("SVG generation failed.");
   }
 
-  // ==========================================
-  // CREATE EXACTLY FOUR SVG ELEMENTS
-  // ==========================================
+  document.body.replaceChildren(
+    document.importNode(parsed.documentElement, true)
+  );
 
-  const inputContainer =
-    document.getElementById("rgb-inputs");
+  document.body.style.margin = "0";
+  document.body.style.padding = "20px";
+  document.body.style.display = "flex";
+  document.body.style.justifyContent = "center";
+  document.body.style.background = "#f4f4f4";
 
-  CHANNELS.forEach(channel => {
-    const section = document.createElement("section");
-    section.className = "rgb-channel";
-
-    const heading = document.createElement("h3");
-    heading.textContent = channel.toUpperCase();
-
-    section.appendChild(heading);
-    section.appendChild(generateInput(channel));
-
-    inputContainer.appendChild(section);
-  });
-
-  document.getElementById("rgb-output")
-    .appendChild(generateOutput());
-
-  // ==========================================
-  // RENDER ALL FOUR SVGs
-  // ==========================================
-
-  function render() {
-    const index = parseInt(encode(), 2);
-
-    // Input SVGs.
-    CHANNELS.forEach(channel => {
-      const value = state[channel];
-
-      const root = document.querySelector(
-        `.rgb-channel svg[aria-label="${channel} channel"]`
-      );
-
-      root.querySelectorAll(".rgb-state").forEach(group => {
-        group.classList.remove("active");
-      });
-
-      root.querySelector(
-        `#${channel}-visual-${value}`
-      ).classList.add("active");
-
-      // Update all three actual SVG href links.
-      root.querySelectorAll("a[data-bit]").forEach(link => {
-        const bit = Number(link.dataset.bit);
-        const next = {...state};
-
-        next[channel] ^= 1 << (2 - bit);
-
-        link.setAttribute(
-          "href",
-          "#" +
-          bits(next.red) +
-          bits(next.green) +
-          bits(next.blue)
-        );
-      });
-    });
-
-    // Output SVG.
-    const output = document.querySelector(
-      "#rgb-output svg"
-    );
-
-    output.querySelectorAll(".rgb-state").forEach(group => {
-      group.classList.remove("active");
-    });
-
-    output.querySelector(
-      `#rgb-color-${index}`
-    ).classList.add("active");
-
-    // Readout.
-    document.getElementById("rgb-readout").textContent =
-      currentColor().toUpperCase() +
-      " | #" + encode();
-  }
-
-  // ==========================================
-  // URL NAVIGATION
-  // ==========================================
-
-  window.addEventListener("hashchange", () => {
-    if (decode(location.hash.slice(1))) {
-      render();
-    }
-  });
-
-  // Initialize.
-  if (!decode(location.hash.slice(1))) {
-    history.replaceState(
-      null,
-      "",
-      "#" + encode()
-    );
-  }
-
-  // Initial rendering.
-  render();
-
-  // ==========================================
-  // OPTIONAL INSPECTION API
-  // ==========================================
-
-  window.RGB9 = {
-    state,
-    encode,
-    render,
-    decode,
-
-    getSVGs() {
-      return [...document.querySelectorAll("svg")];
-    }
-  };
-
-  console.log("RGB9 initialized.");
-  console.log("SVG count:", RGB9.getSVGs().length);
-  console.log("Color states:", 512);
-  console.log("Current URL:", location.href);
-
+  console.log("SVG elements:", document.querySelectorAll("svg").length);
+  console.log("Output state groups:", document.querySelectorAll("#output > .out").length);
+  console.log("Red state groups:", document.querySelectorAll("#red > .r-state").length);
+  console.log("Green state groups:", document.querySelectorAll("#green > .g-state").length);
+  console.log("Blue state groups:", document.querySelectorAll("#blue > .b-state").length);
 })();
